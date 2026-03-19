@@ -1,9 +1,0 @@
-{
-  "num_examples": 5000,
-  "avg_reward": 0.0226,
-  "avg_format_reward": 0.1622,
-  "avg_answer_reward": 0.0226,
-  "count_format1_answer1": 113,
-  "count_format1_answer0": 698,
-  "count_format0_answer0": 4189
-}
