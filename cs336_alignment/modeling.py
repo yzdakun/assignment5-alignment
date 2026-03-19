@@ -5,7 +5,6 @@ from unittest.mock import patch
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, PreTrainedTokenizerBase
 
-
 def load_policy_and_tokenizer(
     model_path: str,
     *,
@@ -24,6 +23,10 @@ def load_policy_and_tokenizer(
 
 def compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     """Compute the entropy of next-token distributions."""
+    log_probs = torch.log_softmax(logits, dim=-1)
+    probs = torch.exp(log_probs)
+
+    return -(probs * log_probs).sum(dim=-1)
     raise NotImplementedError
 
 
@@ -34,6 +37,14 @@ def get_response_log_probs(
     return_token_entropy: bool = False,
 ) -> dict[str, torch.Tensor]:
     """Score per-token log-probabilities from a causal language model."""
+    logits = model(input_ids).logits
+    log_probs = torch.log_softmax(logits, dim=-1)
+
+    target_log_probs = torch.gather(log_probs, dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+    output = {"log_probs": target_log_probs}
+    if return_token_entropy:
+        output["token_entropy"] = compute_entropy(logits=logits)
+    return output
     raise NotImplementedError
 
 
