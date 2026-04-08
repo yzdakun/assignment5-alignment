@@ -12,7 +12,7 @@ def masked_mean(
 ) -> torch.Tensor:
     """Average tensor values over masked positions."""
     masked_tensor = tensor * mask.to(dtype=tensor.dtype)
-    return masked_tensor.mean(dim=dim)
+    return masked_tensor.sum(dim=dim) / mask.sum(dim=dim)
     raise NotImplementedError
 
 
@@ -61,6 +61,7 @@ def compute_naive_policy_gradient_loss(
     policy_log_probs: torch.Tensor,
 ) -> torch.Tensor:
     """Compute naive policy gradient loss."""
+    return -(raw_rewards_or_advantages * policy_log_probs)
     raise NotImplementedError
 
 
@@ -71,7 +72,34 @@ def compute_grpo_clip_loss(
     cliprange: float,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Compute per-token GRPO-Clip loss."""
-    raise NotImplementedError
+    if policy_log_probs.shape != old_log_probs.shape:
+        raise ValueError("policy_log_probs and old_log_probs must have the same shape")
+    if advantages.ndim != 2:
+        raise ValueError("advantages must have shape (batch_size, 1) or (batch_size, sequence_length)")
+    if advantages.shape[0] != policy_log_probs.shape[0]:
+        raise ValueError("advantages batch dimension must match policy_log_probs")
+    if advantages.shape[1] not in (1, policy_log_probs.shape[1]):
+        raise ValueError("advantages must broadcast over the sequence dimension")
+
+    # One scalar advantage is shared by every token in the same response.
+    broadcast_advantages = advantages.expand_as(policy_log_probs)
+
+    log_ratio = policy_log_probs - old_log_probs
+    ratio = torch.exp(log_ratio)
+    clipped_ratio = torch.clamp(ratio, 1.0 - cliprange, 1.0 + cliprange)
+
+    unclipped_objective = ratio * broadcast_advantages
+    clipped_objective = clipped_ratio * broadcast_advantages
+    per_token_objective = torch.minimum(unclipped_objective, clipped_objective)
+    per_token_loss = -per_token_objective
+
+    metadata = {
+        "ratio": ratio.detach(),
+        "clipped_ratio": clipped_ratio.detach(),
+        "is_clipped": (ratio != clipped_ratio).detach(),
+        "clip_fraction": (ratio != clipped_ratio).to(dtype=policy_log_probs.dtype).mean().detach(),
+    }
+    return per_token_loss, metadata
 
 
 def compute_policy_gradient_loss(
@@ -83,7 +111,33 @@ def compute_policy_gradient_loss(
     cliprange: float | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Dispatch to the selected policy gradient loss."""
-    raise NotImplementedError
+    if loss_type == "no_baseline":
+        if raw_rewards is None:
+            raise ValueError("raw_rewards must be provided for no_baseline loss")
+        loss = compute_naive_policy_gradient_loss(
+            raw_rewards_or_advantages=raw_rewards,
+            policy_log_probs=policy_log_probs,
+        )
+        return loss, {"loss_type": loss_type}
+    if loss_type == "reinforce_with_baseline":
+        if advantages is None:
+            raise ValueError("advantages must be provided for reinforce_with_baseline loss")
+        loss = compute_naive_policy_gradient_loss(
+            raw_rewards_or_advantages=advantages,
+            policy_log_probs=policy_log_probs,
+        )
+        return loss, {"loss_type": loss_type}
+    if loss_type == "grpo_clip":
+        if advantages is None or old_log_probs is None or cliprange is None:
+            raise ValueError("advantages, old_log_probs, and cliprange must be provided for grpo_clip loss")
+        loss, metadata = compute_grpo_clip_loss(
+            advantages=advantages,
+            policy_log_probs=policy_log_probs,
+            old_log_probs=old_log_probs,
+            cliprange=cliprange,
+        )
+        return loss, {"loss_type": loss_type, **metadata}
+    raise ValueError(f"Unsupported loss_type: {loss_type}")
 
 
 def grpo_microbatch_train_step(
@@ -97,4 +151,27 @@ def grpo_microbatch_train_step(
     cliprange: float | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Run one GRPO microbatch train step and backpropagate."""
-    raise NotImplementedError
+    per_token_loss, metadata = compute_policy_gradient_loss(
+        policy_log_probs=policy_log_probs,
+        loss_type=loss_type,
+        raw_rewards=raw_rewards,
+        advantages=advantages,
+        old_log_probs=old_log_probs,
+        cliprange=cliprange,
+    )
+
+    # Average only over response tokens so prompt/padding tokens do not affect
+    # the gradient signal.
+    per_example_loss = masked_mean(
+        tensor=per_token_loss,
+        mask=response_mask,
+        dim=1,
+    )
+    loss = per_example_loss.mean()
+    loss = loss / gradient_accumulation_steps
+    loss.backward()
+
+    return loss, {
+        **metadata,
+        "unnormalized_loss": per_example_loss.detach(),
+    }

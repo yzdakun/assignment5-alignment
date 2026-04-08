@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from cs336_alignment.sft import run_sft_experiment
+from cs336_alignment.sft import main as sft_main
 
 
 def main() -> None:
-    run_sft_experiment()
+    sft_main()
 
 
 if __name__ == "__main__":

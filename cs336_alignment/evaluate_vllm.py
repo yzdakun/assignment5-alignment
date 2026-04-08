@@ -119,7 +119,7 @@ def main():
 def main1():
     data_path = Path("./results/math_baseline/predictions.jsonl")
     examples = load_jsonl(data_path)
-    sample = [ex["response"] for ex in examples if ex["reward"] == 1.0 ]
+    sample = [ex["response"] for ex in examples if ex["format_reward"] == 1.0 and ex["answer_reward"] == 0.0]
     for i in range(10):
         print(f"{i}: {sample[i]}\n")
 

@@ -4,9 +4,9 @@ from collections.abc import Callable
 from typing import Any
 
 import torch
-from tokenization import tokenize_prompt_and_output
-from modeling import get_response_log_probs
-from losses import masked_mean
+from .tokenization import tokenize_prompt_and_output
+from .modeling import get_response_log_probs
+from .losses import masked_mean
 
 def log_generations(
     vllm_model,
