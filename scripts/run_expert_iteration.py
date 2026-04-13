@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from cs336_alignment.expert_iteration import run_expert_iteration_experiment
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from cs336_alignment.expert_iteration import main as expert_iteration_main
 
 
 def main() -> None:
-    run_expert_iteration_experiment()
+    expert_iteration_main()
 
 
 if __name__ == "__main__":
