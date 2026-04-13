@@ -196,6 +196,119 @@ def _summarize_reward_infos(reward_infos: list[dict[str, float]]) -> dict[str, f
     }
 
 
+def _prefix_metrics(prefix: str, metrics: dict[str, int | float]) -> dict[str, int | float]:
+    return {f"{prefix}/{key}": value for key, value in metrics.items()}
+
+
+def _extract_numeric_metrics(metrics: dict[str, Any]) -> dict[str, int | float]:
+    numeric_metrics: dict[str, int | float] = {}
+    for key, value in metrics.items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            numeric_metrics[key] = value
+    return numeric_metrics
+
+
+def _maybe_init_ei_summary_wandb(
+    *,
+    use_wandb: bool,
+    output_dir: Path,
+    config: dict[str, Any],
+    project: str,
+    run_name: str | None,
+    mode: str | None,
+    run_id: str | None,
+):
+    if not use_wandb or run_id is None:
+        return None
+
+    import wandb
+
+    wandb_run = wandb.init(
+        project=project,
+        name=run_name,
+        id=run_id,
+        resume="allow",
+        dir=str(output_dir),
+        config=config,
+        mode=mode,
+        tags=["expert_iteration", "summary"],
+    )
+    wandb.define_metric("ei_step")
+    wandb.define_metric("ei/*", step_metric="ei_step")
+    return wandb_run
+
+
+def _log_ei_summary_metrics(
+    *,
+    use_wandb: bool,
+    output_dir: Path,
+    config: dict[str, Any],
+    project: str,
+    run_name: str | None,
+    mode: str | None,
+    run_id: str | None,
+    ei_step: int,
+    eval_metrics: dict[str, Any] | None,
+    rollout_metrics: dict[str, int | float] | None = None,
+) -> None:
+    wandb_run = _maybe_init_ei_summary_wandb(
+        use_wandb=use_wandb,
+        output_dir=output_dir,
+        config=config,
+        project=project,
+        run_name=run_name,
+        mode=mode,
+        run_id=run_id,
+    )
+    if wandb_run is None:
+        return
+
+    payload: dict[str, int | float] = {"ei_step": ei_step}
+    if rollout_metrics is not None:
+        payload.update(_prefix_metrics("ei", rollout_metrics))
+    if eval_metrics is not None:
+        payload.update(_prefix_metrics("ei", _extract_numeric_metrics(eval_metrics)))
+
+    wandb_run.log(payload)
+    wandb_run.finish()
+
+
+def _update_ei_summary_wandb(
+    *,
+    use_wandb: bool,
+    output_dir: Path,
+    config: dict[str, Any],
+    project: str,
+    run_name: str | None,
+    mode: str | None,
+    run_id: str | None,
+    best_step: dict[str, Any] | None,
+    final_model_path: str,
+    summary_path: str,
+) -> None:
+    wandb_run = _maybe_init_ei_summary_wandb(
+        use_wandb=use_wandb,
+        output_dir=output_dir,
+        config=config,
+        project=project,
+        run_name=run_name,
+        mode=mode,
+        run_id=run_id,
+    )
+    if wandb_run is None:
+        return
+
+    wandb_run.summary["summary_path"] = summary_path
+    wandb_run.summary["final_model_path"] = final_model_path
+    if best_step is not None:
+        wandb_run.summary["best_ei_step"] = best_step["ei_step"]
+        wandb_run.summary["best_avg_answer_reward"] = best_step["avg_answer_reward"]
+        wandb_run.summary["best_model_path"] = best_step["model_path"]
+    wandb_run.finish()
+
+
 def _generate_rollout_rows(
     *,
     model_path: Path,
@@ -445,6 +558,12 @@ def run_expert_iteration_experiment(
     entropy_examples = validation_examples[: min(entropy_num_examples, len(validation_examples))]
 
     current_model_path = model_path
+    ei_wandb_run_id = None
+    if use_wandb:
+        import wandb
+
+        ei_wandb_run_id = wandb.util.generate_id()
+
     summary: dict[str, Any] = {
         "config": {
             "model_path": str(model_path),
@@ -504,6 +623,17 @@ def run_expert_iteration_experiment(
             torch_dtype=torch_dtype,
             attn_implementation=attn_implementation,
         )
+        _log_ei_summary_metrics(
+            use_wandb=use_wandb,
+            output_dir=output_dir,
+            config=summary["config"],
+            project=wandb_project,
+            run_name=wandb_run_name,
+            mode=wandb_mode,
+            run_id=ei_wandb_run_id,
+            ei_step=0,
+            eval_metrics=summary["initial_eval"],
+        )
 
     best_step: dict[str, Any] | None = None
     best_eval_answer_reward = float("-inf")
@@ -560,6 +690,15 @@ def run_expert_iteration_experiment(
             "post_step_eval": None,
             "next_model_path": str(current_model_path),
         }
+        rollout_wandb_metrics = {
+            "rollout_num_selected_questions": len(step_examples),
+            "rollout_num_total": len(rollout_rows),
+            "rollout_num_correct": len(filtered_examples),
+            "rollout_correct_ratio": (
+                len(filtered_examples) / len(rollout_rows) if rollout_rows else 0.0
+            ),
+            "training_skipped": 0,
+        }
 
         if filtered_examples:
             sft_result = run_sft_experiment(
@@ -613,6 +752,7 @@ def run_expert_iteration_experiment(
             }
         else:
             step_summary["training_skipped"] = True
+            rollout_wandb_metrics["training_skipped"] = 1
 
         if entropy_examples:
             step_summary["post_step_eval"] = _collect_entropy_metrics(
@@ -637,6 +777,31 @@ def run_expert_iteration_experiment(
                     "avg_answer_reward": answer_reward,
                     "model_path": str(current_model_path),
                 }
+            _log_ei_summary_metrics(
+                use_wandb=use_wandb,
+                output_dir=output_dir,
+                config=summary["config"],
+                project=wandb_project,
+                run_name=wandb_run_name,
+                mode=wandb_mode,
+                run_id=ei_wandb_run_id,
+                ei_step=ei_step,
+                eval_metrics=step_summary["post_step_eval"],
+                rollout_metrics=rollout_wandb_metrics,
+            )
+        else:
+            _log_ei_summary_metrics(
+                use_wandb=use_wandb,
+                output_dir=output_dir,
+                config=summary["config"],
+                project=wandb_project,
+                run_name=wandb_run_name,
+                mode=wandb_mode,
+                run_id=ei_wandb_run_id,
+                ei_step=ei_step,
+                eval_metrics=None,
+                rollout_metrics=rollout_wandb_metrics,
+            )
 
         step_summary["next_model_path"] = str(current_model_path)
         step_summary_path = step_dir / "step_summary.json"
@@ -650,6 +815,18 @@ def run_expert_iteration_experiment(
     summary["best_step"] = best_step
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=True))
+    _update_ei_summary_wandb(
+        use_wandb=use_wandb,
+        output_dir=output_dir,
+        config=summary["config"],
+        project=wandb_project,
+        run_name=wandb_run_name,
+        mode=wandb_mode,
+        run_id=ei_wandb_run_id,
+        best_step=best_step,
+        final_model_path=str(current_model_path),
+        summary_path=str(summary_path),
+    )
 
     return {
         "summary_path": str(summary_path),
@@ -802,4 +979,3 @@ def cli_run_single(
 
 def main() -> None:
     app()
-
