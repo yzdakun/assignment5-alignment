@@ -32,19 +32,19 @@
 
 ### 当前缺口
 
-- [cs336_alignment/expert_iteration.py](/home/nic/wyz/assignment5-alignment/cs336_alignment/expert_iteration.py) 目前只有 `NotImplementedError`。
-- [scripts/run_expert_iteration.py](/home/nic/wyz/assignment5-alignment/scripts/run_expert_iteration.py) 只是薄封装，尚无真正实验入口。
-- 当前仓库还没有现成的 EI 数据缓存、step 级别目录规范、EI 专属 summary 聚合。
+- [cs336_alignment/expert_iteration.py](/home/nic/wyz/assignment5-alignment/cs336_alignment/expert_iteration.py) 已经有可运行的 EI 主循环与 `single` CLI，但还没有 sweep 子命令。
+- [scripts/run_expert_iteration.py](/home/nic/wyz/assignment5-alignment/scripts/run_expert_iteration.py) 已经接到新的 CLI，可直接运行 `single` 命令。
+- EI 专属指标目前主要写到本地 `summary.json` / `step_summary.json`，还没有完整接入 wandb 面板。
 
-结论：EI 最稳妥的实现方式不是重写一套全新 trainer，而是复用 `sft.py` 的训练/评测骨架，把 EI 看成“离线生成新 SFT 数据，再调用 SFT 训练器”的 5 轮数据闭环。
+结论：当前 EI 的实现方式不是重写一套全新 trainer，而是复用 `sft.py` 的训练/评测骨架，把 EI 看成“离线生成新 SFT 数据，再调用 SFT 训练器”的 5 轮数据闭环。
 
 ## 3. 推荐的实现路径
 
-### 阶段 A：先补最小可运行 EI 闭环
+### 阶段 A：先跑最小可运行 EI 闭环
 
 目标：先跑通 `1` 个 EI step 的 smoke，不追求分数。
 
-需要补的能力：
+当前脚本已经具备的核心能力：
 
 - 在 `expert_iteration.py` 中读取 `train.jsonl` 问题与标准答案。
 - 用 `r1_zero.prompt` 构造 prompt。
@@ -84,20 +84,45 @@
 5. 在 validation 上做评测。
 6. 记录该 step 的响应熵与 checkpoint。
 
-### 阶段 C：补报告导出与画图输入
+### 阶段 C：整理报告导出与画图输入
 
 最终应该能稳定导出：
 
-- `step_metrics.json`
-- `all_steps_summary.json`
+- 顶层 `summary.json`
+- 每个 step 的 `step_summary.json`
 - 每个 EI step 的 `history.json`
 - 每个 EI step 的 `best_checkpoint`
 - 用于画验证准确率曲线的数据
 - 用于画熵曲线的数据
 
-## 4. 实验矩阵
+## 4. 当前脚本入口
 
-### 4.1 Smoke 配置
+EI 当前可直接使用的命令入口是：
+
+```bash
+uv run python scripts/run_expert_iteration.py single [OPTIONS]
+```
+
+最常用的参数如下：
+
+- `--profile local-smoke|cloud`
+- `--output-dir PATH`
+- `--train-device cuda:0`
+- `--rollout-device cuda:1`
+- `--eval-device cuda:1|none`
+- `--ei-batch-size INT`
+- `--rollouts-per-question INT`
+- `--num-epochs INT`
+- `--n-ei-steps INT`
+- `--eval-num-examples INT`
+- `--entropy-num-examples INT`
+- `--use-wandb`
+- `--wandb-project NAME`
+- `--wandb-run-name NAME`
+
+## 5. 实验矩阵
+
+### 5.1 Smoke 配置
 
 用途：确认实现正确，不浪费 GPU。
 
@@ -112,7 +137,18 @@
   - 能完成一次训练与一次验证
   - 能落盘 history 与 step summary
 
-### 4.2 正式主实验
+对应命令：
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile local-smoke \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device none \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/smoke
+```
+
+### 5.2 正式主实验
 
 用途：满足作业要求并拿到结论。
 
@@ -130,6 +166,62 @@
 2. 再跑 `EI-B`，观察“更多训练”是否优于 `EI-A`。
 3. 最后跑 `EI-C`，观察“更大 rollout”是否能带来更高质量专家数据。
 
+对应命令：
+
+`EI-A`
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile cloud \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device cuda:1 \
+  --ei-batch-size 512 \
+  --rollouts-per-question 4 \
+  --num-epochs 1 \
+  --n-ei-steps 5 \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/ei_a \
+  --use-wandb \
+  --wandb-project cs336-alignment-ei \
+  --wandb-run-name ei-a
+```
+
+`EI-B`
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile cloud \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device cuda:1 \
+  --ei-batch-size 1024 \
+  --rollouts-per-question 4 \
+  --num-epochs 2 \
+  --n-ei-steps 5 \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/ei_b \
+  --use-wandb \
+  --wandb-project cs336-alignment-ei \
+  --wandb-run-name ei-b
+```
+
+`EI-C`
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile cloud \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device cuda:1 \
+  --ei-batch-size 2048 \
+  --rollouts-per-question 8 \
+  --num-epochs 2 \
+  --n-ei-steps 5 \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/ei_c \
+  --use-wandb \
+  --wandb-project cs336-alignment-ei \
+  --wandb-run-name ei-c
+```
+
 如果预算紧张，最少也要完成下面两组，这样才能覆盖至少两种 `G` 和两种 `epoch`：
 
 - `Db=512, G=4, epochs=1`
@@ -137,7 +229,7 @@
 
 如果还有预算，优先补 `Db=1024, G=4, epochs=2`，这样可以更干净地区分“增大 rollout”与“增加训练 epoch”各自的贡献。
 
-### 4.3 结果不理想时的扩展顺序
+### 5.3 结果不理想时的扩展顺序
 
 如果 `avg_answer_reward < 15%`，按下面顺序加预算，而不是同时乱调：
 
@@ -151,7 +243,24 @@
 - 再增大 `G`，会提高探索，但也显著增加 rollout 成本。
 - 最后再增大 epoch，避免在低质量 EI 数据上过拟合。
 
-## 5. 每个 EI step 应记录的指标
+一个更保守的 2 卡正式命令：
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile cloud \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device cuda:1 \
+  --ei-batch-size 512 \
+  --rollouts-per-question 4 \
+  --num-epochs 1 \
+  --n-ei-steps 2 \
+  --eval-num-examples 256 \
+  --entropy-num-examples 64 \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/cloud_sanity
+```
+
+## 6. 每个 EI step 应记录的指标
 
 最低限度建议记录这些字段：
 
@@ -176,7 +285,24 @@
 - `ei_step -> eval_avg_answer_reward`
 - `train_step 或 ei_step -> mean_token_entropy`
 
-## 6. 建议的目录组织
+当前脚本里这些指标主要分布在两个地方：
+
+- 顶层 `summary.json`
+- 各 step 目录下的 `step_summary.json` 和 `history.json`
+
+查看顶层 summary：
+
+```bash
+python -m json.tool cs336_alignment/results/expert_iteration/ei_a/summary.json
+```
+
+查看某一步的详细结果：
+
+```bash
+python -m json.tool cs336_alignment/results/expert_iteration/ei_a/step_1/step_summary.json
+```
+
+## 7. 建议的目录组织
 
 建议把每组 EI 配置单独放一个结果目录，例如：
 
@@ -197,13 +323,14 @@ cs336_alignment/results/expert_iteration/
 
 这样后面画图、写报告、回溯某一步失败原因都会容易很多。
 
-## 7. 推荐的执行顺序
+## 8. 推荐的执行顺序
 
 ### 第 1 天：实现与 smoke
 
-- 补 `expert_iteration.py` 最小闭环。
-- 只跑 `1` 个 EI step 的 smoke。
-- 验证过滤、训练、评测、落盘都正常。
+- 跑 `smoke` 命令。
+- 检查 `step_1/rollout_samples.jsonl` 是否生成。
+- 检查 `step_1/filtered_sft.jsonl` 是否非空。
+- 检查 `step_1/history.json`、`step_1/step_summary.json`、顶层 `summary.json` 是否写出。
 
 ### 第 2 天：第一组正式 EI
 
@@ -219,7 +346,73 @@ cs336_alignment/results/expert_iteration/
 - 有预算再跑 `EI-C`。
 - 聚合三组配置结果，选最佳模型作为 EI 最终提交模型。
 
-## 8. 报告写作时的结论模板
+按当前脚本，推荐的实际执行顺序与命令是：
+
+1. Smoke
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile local-smoke \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device none \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/smoke
+```
+
+2. EI-A
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile cloud \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device cuda:1 \
+  --ei-batch-size 512 \
+  --rollouts-per-question 4 \
+  --num-epochs 1 \
+  --n-ei-steps 5 \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/ei_a
+```
+
+3. EI-B
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile cloud \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device cuda:1 \
+  --ei-batch-size 1024 \
+  --rollouts-per-question 4 \
+  --num-epochs 2 \
+  --n-ei-steps 5 \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/ei_b
+```
+
+4. EI-C
+
+```bash
+uv run python scripts/run_expert_iteration.py single \
+  --profile cloud \
+  --train-device cuda:0 \
+  --rollout-device cuda:1 \
+  --eval-device cuda:1 \
+  --ei-batch-size 2048 \
+  --rollouts-per-question 8 \
+  --num-epochs 2 \
+  --n-ei-steps 5 \
+  --output-dir /root/autodl-tmp/assignment5-assets/results/expert_iteration/ei_c
+```
+
+5. 汇总查看每组结果
+
+```bash
+python -m json.tool cs336_alignment/results/expert_iteration/ei_a/summary.json
+python -m json.tool cs336_alignment/results/expert_iteration/ei_b/summary.json
+python -m json.tool cs336_alignment/results/expert_iteration/ei_c/summary.json
+```
+
+## 9. 报告写作时的结论模板
 
 最终报告至少要能回答下面 4 个问题：
 
@@ -233,6 +426,6 @@ cs336_alignment/results/expert_iteration/
 - `Compared with our best SFT model, expert iteration improved validation answer reward from X to Y, showing that filtering self-generated correct trajectories can bootstrap better reasoning behavior.`
 - `Most of the gain happened in EI steps A-B, while later steps showed diminishing returns / continued improvement, and the entropy curve suggests the model became more confident without immediately collapsing.`
 
-## 9. 一句话版本
+## 10. 一句话版本
 
-这次 EI 的最优策略不是“一上来就大规模扫参”，而是先把 `expert_iteration.py` 做成复用 `sft.py` 的 5-step 离线数据闭环，再按 `smoke -> EI-A -> EI-B -> EI-C` 的顺序逐步扩实验，确保每一步都留下可画图、可对比、可写报告的结构化结果。
+这次 EI 的最优策略不是“一上来就大规模扫参”，而是直接使用当前脚本的 `single` 命令，按 `smoke -> EI-A -> EI-B -> EI-C` 的顺序逐步扩实验，确保每一步都留下 `summary.json`、`step_summary.json`、`history.json` 和 checkpoint 这些可画图、可对比、可写报告的结构化结果。
