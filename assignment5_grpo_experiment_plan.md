@@ -150,7 +150,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py single \
+uv run python scripts/run_grpo.py single \
   --profile local-smoke \
   --output-dir results/GRPO/smoke \
   --save-rollouts \
@@ -187,7 +187,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py single \
+uv run python scripts/run_grpo.py single \
   --profile cloud \
   --output-dir results/GRPO/on_policy_main
 ```
@@ -214,7 +214,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py learning-rate \
+uv run python scripts/run_grpo.py learning-rate \
   --profile cloud \
   --output-dir results/GRPO/learning_rate
 ```
@@ -236,7 +236,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py baselines \
+uv run python scripts/run_grpo.py baselines \
   --profile cloud \
   --output-dir results/GRPO/baselines
 ```
@@ -265,7 +265,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py length-normalization \
+uv run python scripts/run_grpo.py length-normalization \
   --profile cloud \
   --output-dir results/GRPO/length_normalization
 ```
@@ -286,7 +286,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py std-normalization \
+uv run python scripts/run_grpo.py std-normalization \
   --profile cloud \
   --output-dir results/GRPO/std_normalization
 ```
@@ -326,7 +326,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py off-policy-sweep \
+uv run python scripts/run_grpo.py off-policy-sweep \
   --profile cloud \
   --output-dir results/GRPO/off_policy
 ```
@@ -334,7 +334,7 @@ smoke 成功标准：
 如果想自定义扫描网格：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py off-policy-sweep \
+uv run python scripts/run_grpo.py off-policy-sweep \
   --profile cloud \
   --configs 1x256,2x256,4x256,2x128,4x128 \
   --output-dir results/GRPO/off_policy
@@ -358,7 +358,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py off-policy-no-clip \
+uv run python scripts/run_grpo.py off-policy-no-clip \
   --profile cloud \
   --output-dir results/GRPO/off_policy_no_clip
 ```
@@ -386,7 +386,7 @@ smoke 成功标准：
 推荐命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py prompt-ablation \
+uv run python scripts/run_grpo.py prompt-ablation \
   --profile cloud \
   --output-dir results/GRPO/prompt_ablation
 ```
@@ -398,7 +398,7 @@ smoke 成功标准：
 如果你希望按当前脚本封装，把章节 8 要求的实验顺序整体串起来跑，可以使用聚合命令：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py all-required \
+uv run python scripts/run_grpo.py all-required \
   --profile cloud \
   --output-dir results/GRPO/chapter8_required
 ```
@@ -535,15 +535,15 @@ off-policy 会显著提高 sample efficiency，但也更容易出问题。建议
 对应脚本顺序为：
 
 ```bash
-.venv/bin/python scripts/run_grpo.py single --profile local-smoke --output-dir results/GRPO/smoke --save-rollouts --skip-save-checkpoint --skip-save-best-checkpoint
-.venv/bin/python scripts/run_grpo.py single --profile cloud --output-dir results/GRPO/on_policy_main
-.venv/bin/python scripts/run_grpo.py learning-rate --profile cloud --output-dir results/GRPO/learning_rate
-.venv/bin/python scripts/run_grpo.py baselines --profile cloud --output-dir results/GRPO/baselines
-.venv/bin/python scripts/run_grpo.py length-normalization --profile cloud --output-dir results/GRPO/length_normalization
-.venv/bin/python scripts/run_grpo.py std-normalization --profile cloud --output-dir results/GRPO/std_normalization
-.venv/bin/python scripts/run_grpo.py off-policy-sweep --profile cloud --output-dir results/GRPO/off_policy
-.venv/bin/python scripts/run_grpo.py off-policy-no-clip --profile cloud --output-dir results/GRPO/off_policy_no_clip
-.venv/bin/python scripts/run_grpo.py prompt-ablation --profile cloud --output-dir results/GRPO/prompt_ablation
+uv run python scripts/run_grpo.py single --profile local-smoke --output-dir results/GRPO/smoke --save-rollouts --skip-save-checkpoint --skip-save-best-checkpoint
+uv run python scripts/run_grpo.py single --profile cloud --output-dir results/GRPO/on_policy_main
+uv run python scripts/run_grpo.py learning-rate --profile cloud --output-dir results/GRPO/learning_rate
+uv run python scripts/run_grpo.py baselines --profile cloud --output-dir results/GRPO/baselines
+uv run python scripts/run_grpo.py length-normalization --profile cloud --output-dir results/GRPO/length_normalization
+uv run python scripts/run_grpo.py std-normalization --profile cloud --output-dir results/GRPO/std_normalization
+uv run python scripts/run_grpo.py off-policy-sweep --profile cloud --output-dir results/GRPO/off_policy
+uv run python scripts/run_grpo.py off-policy-no-clip --profile cloud --output-dir results/GRPO/off_policy_no_clip
+uv run python scripts/run_grpo.py prompt-ablation --profile cloud --output-dir results/GRPO/prompt_ablation
 ```
 
 ### 7.1 实验执行总表
