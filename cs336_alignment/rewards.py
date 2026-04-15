@@ -14,6 +14,7 @@ def compute_group_normalized_rewards(
     group_size: int,
     advantage_eps: float,
     normalize_by_std: bool,
+    reward_infos: list[dict[str, float]] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
     """Compute raw rewards and group-normalized advantages."""
     if group_size <= 0:
@@ -23,10 +24,13 @@ def compute_group_normalized_rewards(
     if len(rollout_responses) % group_size != 0:
         raise ValueError("Number of rollout responses must be divisible by group_size")
 
-    reward_infos = [
-        reward_fn(response, ground_truth)
-        for response, ground_truth in zip(rollout_responses, repeated_ground_truths, strict=True)
-    ]
+    if reward_infos is None:
+        reward_infos = [
+            reward_fn(response, ground_truth)
+            for response, ground_truth in zip(rollout_responses, repeated_ground_truths, strict=True)
+        ]
+    elif len(reward_infos) != len(rollout_responses):
+        raise ValueError("reward_infos must have the same length as rollout_responses")
     raw_rewards = torch.tensor(
         [reward_info["reward"] for reward_info in reward_infos],
         dtype=torch.float32,

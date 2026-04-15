@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from cs336_alignment.grpo import run_grpo_train_loop
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from cs336_alignment.grpo import main as grpo_main
 
 
 def main() -> None:
-    run_grpo_train_loop()
+    grpo_main()
 
 
 if __name__ == "__main__":
